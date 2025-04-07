@@ -1,21 +1,29 @@
 """
-Goal: Two view modes, one where each player has their own screen and one where they are both on one screen (press TAB to toggle)
+Goal: Get dynamic split screen
+Current: Can fly player one to the left to split screen and then back right to merge to full.
+Problems: Ships can't trade sides
 """
 import sys
 import pathlib
+from enum import Enum
 import arcade
+
+
+class SplitMode(Enum):
+    FULL = 0
+    SPLIT = 1
 
 class Player(arcade.Sprite):
     def __init__(self, udlr: list[int]):
-        super().__init__(":resources:/images/space_shooter/playerShip1_blue.png")
+        super().__init__(":resources:/images/space_shooter/playerShip1_blue.png", scale=0.5)
         self.key_up, self.key_down, self.key_left, self.key_right = udlr
 
     def update(self, delta_time):
         self.center_x += self.change_x
-        self.center_y += self.change_y
+        self.center_y = arcade.math.clamp(self.center_y + self.change_y, 0, 400)
 
     def on_key_press(self, symbol: int):
-        d = 4
+        d = 5
         if symbol == self.key_up:
             self.angle = 0
             if self.change_y > 0:
@@ -47,7 +55,7 @@ class Game(arcade.Window):
         p = Player([arcade.key.UP, arcade.key.DOWN, arcade.key.LEFT, arcade.key.RIGHT])
         p.position = (200, 150)
         self.sprites.append(p)
-
+        self.mode = SplitMode.FULL
 
     def draw_scene(self):
         arcade.draw_lrbt_rectangle_filled(-10000, 10000, -10000, 10000, arcade.color.BLACK)
@@ -56,14 +64,28 @@ class Game(arcade.Window):
         arcade.draw_circle_filled(0, 0, 10, arcade.color.GRAY)
         arcade.draw_circle_filled(300, 300, 20, arcade.color.PINK)
         arcade.draw_text("this is a test", 70, 70, arcade.color.PINK, 24)
-        for i in range(20):
-            arcade.draw_text(str(i), i * 50, 0, arcade.color.GREEN, 20)
+        for x in range(-2000, 2001, 100):
+            arcade.draw_text(str(x), x, 0, arcade.color.GREEN, 20)
         self.sprites.draw()
 
     def on_draw(self):
         self.clear(arcade.color.DARK_BROWN)
-        if self.show_camf:
+        a1, a2 = self.sprites
+        dist = arcade.get_distance_between_sprites(a1, a2)
+
+        if self.mode == SplitMode.FULL and dist >= 800:
+            print('transition to split mode')
+            self.mode = SplitMode.SPLIT
+            self.caml.position = self.camf.position
+            self.camr.position = self.camf.position
+        elif self.mode == SplitMode.SPLIT and dist <= 400:
+            print('transition to full mode')
+            self.mode = SplitMode.FULL
+            self.camf.position = self.caml.position
+
+        if self.mode == SplitMode.FULL:
             scroll_view(self.camf, self.sprites[0])
+            scroll_view(self.camf, self.sprites[1])
             with self.camf.activate():
                 self.draw_scene()
         else:
@@ -78,8 +100,6 @@ class Game(arcade.Window):
         self.sprites.update(delta_time)
 
     def on_key_press(self, symbol: int, modifiers: int):
-        if symbol == arcade.key.TAB:
-            self.show_camf = not self.show_camf
         if symbol == arcade.key.ESCAPE:
             self.close()
         [s.on_key_press(symbol) for s in self.sprites]
@@ -107,19 +127,18 @@ if __name__ == '__main__':
     win = Game(width, height, pathlib.Path(sys.argv[0]).name)
     win.caml = arcade.Camera2D(
         projection=arcade.rect.LBWH(0, 0, width, height),
-        position=(0, 0),
+        position=(0, -50),
         scissor=arcade.rect.LBWH(50, 50, 400, 400)  # screenspace
     )
     win.camr = arcade.Camera2D(
         projection=arcade.rect.LBWH(0, 0, width, height),
-        position=(0, 0),
-        scissor=arcade.rect.LBWH(450, 50, 400, 400)  # screenspace
+        position=(0, -50),
+        scissor=arcade.rect.LBWH(451, 50, 400, 400)  # screenspace
     )
     win.camf = arcade.Camera2D(
         projection=arcade.rect.LBWH(0, 0, width, height),
-        position=(0, 0),
-        scissor=arcade.rect.LBWH(50, 50, width-100, height-100)  # full window
+        position=(0, -50),
+        scissor=arcade.rect.LBWH(50, 50, 800, 400)  # full window
     )
-    win.show_camf = False  # toggle variable
     win.run()
 
