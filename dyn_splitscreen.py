@@ -1,14 +1,11 @@
 """
-Goal: Get dynamic split screen, added margin, a bit of cleanup.
-Result: It works! There are some hitches.
-
-BUG: When flying one ship to the left (while the other is still), when the screen splits, the split/full merge thrashes back and forth for a few frames.
-I'm assuming it is because the "split" and "merge" logic are both happening at the same time. You'll notice the "split"
-feels choppy in general.
+Goal: Get dynamic split screen, fix jitter on full/split transitions
+Result: Jitter was fixed
 """
 
 import sys
 import math
+import time
 import random
 import pathlib
 from enum import Enum
@@ -25,6 +22,21 @@ MOUNTAIN_HEIGHT = int(VIEW_HEIGHT * .3)
 class SplitMode(Enum):
     FULL = 0
     SPLIT = 1
+
+class FpsCounter:
+    def __init__(self):
+        self.start_time = time.perf_counter()
+        self.ticks = 0
+
+    def tick(self):
+        self.ticks += 1
+
+    @property
+    def fps(self):
+        fps = self.ticks / (time.perf_counter() - self.start_time)
+        self.start_time = time.perf_counter()
+        self.ticks = 0
+        return fps
 
 
 class Player(arcade.Sprite):
@@ -63,6 +75,7 @@ class Player(arcade.Sprite):
 class Game(arcade.Window):
     def __init__(self, w, h, view_width, view_height, view_offset, title):
         super().__init__(w, h, title)
+        self.fps = FpsCounter()
 
         # cameras
         self.caml = arcade.Camera2D(
@@ -112,13 +125,10 @@ class Game(arcade.Window):
         self.line_pts.append((WORLD_X_MAX, -100))
         self.line_pts.append((WORLD_X_MIN, -100))
 
-        # debug
-        self.tick = 0
-
     def draw_scene(self):
         arcade.draw_lrbt_rectangle_filled(WORLD_X_MIN, WORLD_X_MAX, -10000, 10000, arcade.color.BLACK)
         self.bg_sprites.draw()
-        arcade.draw_polygon_filled(self.line_pts, arcade.color.DARK_BROWN)
+        arcade.draw_polygon_filled(self.line_pts, arcade.color.DARK_BROWN)  # seems slow
         arcade.draw_line_strip(self.line_pts, arcade.color.YELLOW, 2)
         arcade.draw_lrbt_rectangle_filled(-200, 200, -200, 200, arcade.color.YELLOW)
         arcade.draw_circle_filled(0, 0, 30, arcade.color.RED)
@@ -134,15 +144,17 @@ class Game(arcade.Window):
         left_actor, right_actor = (left_actor, right_actor) if left_actor.center_x < right_actor.center_x else (right_actor, left_actor)
         dist = arcade.get_distance_between_sprites(left_actor, right_actor)
 
-        if self.mode == SplitMode.FULL and dist >= (VIEW_WIDTH * 2) - (MARGIN * 2):
-            print(f'{self.tick} transition to split mode')
-            self.mode = SplitMode.SPLIT
-            self.caml.position = self.camf.position
-            self.camr.position = self.camf.position
-        elif self.mode == SplitMode.SPLIT and math.fabs(self.caml.position.x - self.camr.position.x) < 15:
-            print(f'{self.tick} transition to full mode')
-            self.mode = SplitMode.FULL
-            self.camf.position = self.caml.position
+        if dist >= (VIEW_WIDTH * 2) - (MARGIN * 2):
+            if self.mode != SplitMode.SPLIT:
+                print(f'{self.fps.ticks} transition to split mode')
+                self.mode = SplitMode.SPLIT
+                self.caml.position = self.camf.position
+                self.camr.position = self.camf.position
+        elif math.fabs(self.caml.position.x - self.camr.position.x) < 15:
+            if self.mode != SplitMode.FULL:
+                print(f'{self.fps.ticks} transition to full mode')
+                self.mode = SplitMode.FULL
+                self.camf.position = self.caml.position
 
         if self.mode == SplitMode.FULL:
             scroll_view(self.camf, left_actor)
@@ -160,9 +172,9 @@ class Game(arcade.Window):
                 x = VIEW_OFFSET[0] + VIEW_WIDTH
                 arcade.draw_line(x, 0, x, WIN_HEIGHT, arcade.color.WHITE, 3)
 
-        self.tick += 1
-        # if self.tick % 5 == 0:
-        #     print(self.caml.position, self.camr.position, self.camf.position)
+        self.fps.tick()
+        if self.fps.ticks > 60 * 2:
+            print(f"{self.fps.fps:.2f}")
 
     def on_update(self, delta_time):
         self.sprites.update(delta_time)
