@@ -1,6 +1,5 @@
 """
-Goal: Get dynamic split screen, fix jitter on full/split transitions
-Result: Jitter was fixed
+Goal: Implement dynamic split screen with drawing optimization of background elements. Done!
 """
 
 import sys
@@ -12,10 +11,16 @@ from enum import Enum
 import arcade
 
 WORLD_X_MIN, WORLD_X_MAX = -5000, 5000
-WIN_WIDTH, WIN_HEIGHT = 1200, 800
-VIEW_WIDTH, VIEW_HEIGHT = 500, 700
-VIEW_OFFSET = (100, 50)
-MARGIN = 75
+
+# WIN_WIDTH, WIN_HEIGHT = 1280, 720
+# VIEW_WIDTH, VIEW_HEIGHT = 600, 700
+# VIEW_OFFSET = (40, 10)
+
+WIN_WIDTH, WIN_HEIGHT = 1920, 1080
+VIEW_WIDTH, VIEW_HEIGHT = 950, 1000
+VIEW_OFFSET = (10, 40)
+
+VIEW_MARGIN = 75
 MOUNTAIN_HEIGHT = int(VIEW_HEIGHT * .3)
 
 
@@ -103,7 +108,24 @@ class Game(arcade.Window):
         p.position = (200, 150)
         self.sprites.append(p)
 
-        # world geometry
+        # world geometry - debug shapes
+        self.shapes = arcade.shape_list.ShapeElementList()
+        sq = arcade.shape_list.create_rectangle_filled(center_x=500, center_y=350, width=50, height=50, color=(255, 0, 0))
+        self.shapes.append(sq)
+
+        # world geometry - mountains
+        rect = arcade.shape_list.create_rectangle_filled_with_colors([(WORLD_X_MIN, 0), (WORLD_X_MIN, 20), (WORLD_X_MAX, 20), (WORLD_X_MAX, 0)], [arcade.color.DARK_BROWN, arcade.color.DARK_BROWN, arcade.color.DARK_BROWN, arcade.color.DARK_BROWN])
+        self.shapes.append(rect)
+        for i in range(100):
+            tri_x = random.randint(WORLD_X_MIN, WORLD_X_MAX)
+            tri_height = random.randint(20, MOUNTAIN_HEIGHT)
+            tri_width = random.randint(100, 500)
+            tri = arcade.shape_list.create_triangles_filled_with_colors(
+                [(tri_x - tri_width, 0), (tri_x + tri_width, 0), (tri_x, tri_height)], [arcade.color.DARK_BROWN, arcade.color.DARK_BROWN, arcade.color.DARK_BROWN]
+            )
+            self.shapes.append(tri)
+
+        # world geometry - sky
         self.bg_sprites = arcade.SpriteList()
         for _ in range(60):
             x = random.randint(WORLD_X_MIN, WORLD_X_MAX)
@@ -119,23 +141,15 @@ class Game(arcade.Window):
             img = random.choice(images)
             sprite = arcade.Sprite(img, scale, x, y, angle=a)
             self.bg_sprites.append(sprite)
-        def my_rand(x, max_val):
-            return ((x * 123455) ^ x) % max_val  # quasi-random number generator, repeatable
-        self.line_pts = [(x, my_rand(x, 200)) for x in range(WORLD_X_MIN, WORLD_X_MAX, MOUNTAIN_HEIGHT)]
-        self.line_pts.append((WORLD_X_MAX, -100))
-        self.line_pts.append((WORLD_X_MIN, -100))
+
 
     def draw_scene(self):
         arcade.draw_lrbt_rectangle_filled(WORLD_X_MIN, WORLD_X_MAX, -10000, 10000, arcade.color.BLACK)
         self.bg_sprites.draw()
-        arcade.draw_polygon_filled(self.line_pts, arcade.color.DARK_BROWN)  # seems slow
-        arcade.draw_line_strip(self.line_pts, arcade.color.YELLOW, 2)
-        arcade.draw_lrbt_rectangle_filled(-200, 200, -200, 200, arcade.color.YELLOW)
-        arcade.draw_circle_filled(0, 0, 30, arcade.color.RED)
-        arcade.draw_circle_filled(0, 0, 10, arcade.color.GRAY)
-        arcade.draw_circle_filled(300, 300, 20, arcade.color.PINK)
+        self.shapes.draw()
         arcade.draw_text("this is a test", 70, 70, arcade.color.PINK, 24)
         self.sprites.draw()
+
 
     def on_draw(self):
         self.clear((25, 25, 25))
@@ -144,13 +158,17 @@ class Game(arcade.Window):
         left_actor, right_actor = (left_actor, right_actor) if left_actor.center_x < right_actor.center_x else (right_actor, left_actor)
         dist = arcade.get_distance_between_sprites(left_actor, right_actor)
 
-        if dist >= (VIEW_WIDTH * 2) - (MARGIN * 2):
+        # If statements below are written to prevent both states from being true at the same time (causes jittering between states)
+        # The implementation favors split screen mode in the situation where both could be true.
+        if dist >= (VIEW_WIDTH * 2) - (VIEW_MARGIN * 2):
+            # Split screen when players are too far apart
             if self.mode != SplitMode.SPLIT:
                 print(f'{self.fps.ticks} transition to split mode')
                 self.mode = SplitMode.SPLIT
                 self.caml.position = self.camf.position
                 self.camr.position = self.camf.position
-        elif math.fabs(self.caml.position.x - self.camr.position.x) < 15:
+        elif math.fabs(self.caml.position.x - self.camr.position.x) < 10:
+            # Merge screen when cameras are similar
             if self.mode != SplitMode.FULL:
                 print(f'{self.fps.ticks} transition to full mode')
                 self.mode = SplitMode.FULL
@@ -189,10 +207,10 @@ def scroll_view(cam, actor):
     # translate the screen view to world space
     view_in_world_space = cam.scissor.move(cam.position[0], cam.position[1])
     new_view = None  # rect in world-space
-    if actor.center_x - MARGIN < view_in_world_space.left:
-        new_view = view_in_world_space.align_left(actor.center_x - MARGIN)
-    if actor.center_x + MARGIN > view_in_world_space.right:
-        new_view = view_in_world_space.align_right(actor.center_x + MARGIN)
+    if actor.center_x - VIEW_MARGIN < view_in_world_space.left:
+        new_view = view_in_world_space.align_left(actor.center_x - VIEW_MARGIN)
+    if actor.center_x + VIEW_MARGIN > view_in_world_space.right:
+        new_view = view_in_world_space.align_right(actor.center_x + VIEW_MARGIN)
     if actor.center_y > view_in_world_space.top:
         new_view = view_in_world_space.align_top(actor.center_y)
     if actor.center_y < view_in_world_space.bottom:
