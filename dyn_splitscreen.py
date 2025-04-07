@@ -1,7 +1,5 @@
 """
-Goal: Get basic scrolling working
-- x have player start in center of screen move in all directions
-- x have simple scroll screen behavior when player gets to edge
+Goal: Have basic scrolling working with flying ship
 """
 import arcade
 
@@ -26,33 +24,43 @@ class Game(arcade.Window):
             arcade.draw_text(str(i), i * 50, 0, arcade.color.GREEN, 20)
         self.sprites.draw()
 
-
     def on_draw(self):
         self.clear(arcade.color.DARK_BROWN)
         with self.cam.activate():
             self.draw_scene(0)
 
+    def on_update(self, delta_time):
+        self.actor.center_x += self.actor.change_x
+        self.actor.center_y += self.actor.change_y
+        scroll_view(self.cam, self.actor)
+
     def on_key_press(self, symbol: int,modifiers: int):
-        d = 25
+        d = 5
         if symbol == arcade.key.ESCAPE:
             self.close()
 
         if symbol == arcade.key.W:
-            self.actor.center_y += d
+            self.actor.angle = 0
+            self.actor.change_x = 0
+            self.actor.change_y = d
         elif symbol == arcade.key.S:
-            self.actor.center_y += -d
+            self.actor.angle = 180
+            self.actor.change_x = 0
+            self.actor.change_y = -d
         elif symbol == arcade.key.D:
-            self.actor.center_x += d
+            self.actor.angle = 90
+            self.actor.change_x = d
+            self.actor.change_y = 0
         elif symbol == arcade.key.A:
-            self.actor.center_x += -d
-        print(self.actor.position)
-        scroll_view(self.cam, self.actor)
+            self.actor.angle = 270
+            self.actor.change_x = -d
+            self.actor.change_y = 0
 
 def scroll_view(cam, actor):
+    # translate the screen view to world space
     view_in_world_space = cam.scissor.move(cam.position[0], cam.position[1])
     new_view = None  # world-space
     if actor.center_x < view_in_world_space.left:
-        # shift the world space view
         new_view = view_in_world_space.align_left(actor.center_x)
     if actor.center_x > view_in_world_space.right:
         new_view = view_in_world_space.align_right(actor.center_x)
