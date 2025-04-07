@@ -1,71 +1,78 @@
 """
-Goal: Trying to use the built in Section class and Manager to handle split screen.
-Results: Works (draws stuff from both sections), but there isn't scissoring and it doesn't automatically handle offsets. You have to automatically offset an object's world coordinates.
+Goal: See if I can dynamically move a view/camera around to confirm I understand the math
+Result: Yup!
 """
 import arcade
 
-class LeftSect(arcade.Section):
-    def __init__(self, left, bottom, width, height, **kwargs):
-        super().__init__(left, bottom, width, height, **kwargs)
+x = 0
 
-    def on_draw(self):
-        print('draw left', self.left)
-        self.view.draw_scene(0)
 
-    def on_key_press(self, symbol: int, modifiers: int):
-        if symbol == arcade.key.ESCAPE:
-            self.window.close()
-class RightSect(arcade.Section):
-    def __init__(self, left, bottom, width, height, **kwargs):
-        super().__init__(left, bottom, width, height, **kwargs)
-
-    def on_draw(self):
-        print('draw right', self.left)
-        self.view.draw_scene(1)
-
-    def on_key_press(self, symbol: int, modifiers: int):
-        if symbol == arcade.key.ESCAPE:
-            self.window.close()
-class GameView(arcade.View):
-    def __init__(self):
-        super().__init__()
-        self.lefts = LeftSect(0, 0, 100, 100)
-        self.rights = RightSect(400, 400, 100, 100)
-        self.sm = arcade.SectionManager(self)
-        self.sm.add_section(self.rights)
-        self.sm.add_section(self.lefts)
-
-    def on_show_view(self) -> None:
-        print('enable')
-        self.sm.enable()
-
-    def on_hide_view(self):
-        print('disable')
-        self.sm.disable()
-
-    def on_draw(self):
-        print('view draw')
-        self.clear(arcade.color.DARK_BROWN)
+class Game(arcade.Window):
+    def __init__(self, w, h, title):
+        super().__init__(w, h, title)
 
     def draw_scene(self, mode):
         bg = arcade.color.YELLOW if mode == 0 else arcade.color.ORANGE
-        arcade.draw_lrbt_rectangle_filled(-1000, 1000, -1000, 1000, bg)
-        arcade.draw_circle_filled(self.left + 0, self.bottom + 0, 30, arcade.color.RED)
-        # arcade.draw_circle_filled(0, 0, 10, arcade.color.GRAY)
-        # arcade.draw_text("this is a test", 70, 70, arcade.color.ORANGE, 24)
-        # arcade.draw_line(-100, -100, 100, 100, arcade.color.BLUE)
-        # arcade.draw_line(-100, 100, 100, -100, arcade.color.BLUE)
-        # arcade.draw_line(x, 0, 100, 100, arcade.color.BLUE)
+        arcade.draw_lrbt_rectangle_filled(-200, 200, -200, 200, bg)
+        arcade.draw_circle_filled(0, 0, 30, arcade.color.RED)
+        arcade.draw_circle_filled(0, 0, 10, arcade.color.GRAY)
+        arcade.draw_text("this is a test", 70, 70, arcade.color.ORANGE, 24)
+        arcade.draw_line(-100, -100, 100, 100, arcade.color.BLUE)
+        arcade.draw_line(-100, 100, 100, -100, arcade.color.BLUE)
+        arcade.draw_line(x, 0, 100, 100, arcade.color.BLUE)
 
-    # def draw_scene2(self):
-    #     # bg = arcade.color.YELLOW if mode == 0 else arcade.color.ORANGE
-    #     # arcade.draw_lrbt_rectangle_filled(-1000, 1000, -1000, 1000, bg)
-    #     arcade.draw_circle_filled(self.left + 0, 20, 10, arcade.color.PURPLE)
+    def on_draw(self):
+        global x
+        x += 0.3
 
+        self.clear(arcade.color.DARK_BROWN)
+        with self.cam.activate() as cam:
+            self.draw_scene(0)
+            print('xxxxxxx')
+            print(cam.viewport)
+            print(cam.position)
+            print(cam.projection)
+            print(cam.scissor)
 
+    def on_key_press(self, symbol: int, modifiers: int):
+        d = 20
+
+        if symbol == arcade.key.ESCAPE:
+            self.close()
+
+        # move camera only
+        elif symbol == arcade.key.W:
+            self.cam.position = self.cam.position + (0, d)
+        elif symbol == arcade.key.S:
+            self.cam.position = self.cam.position + (0, -d)
+        elif symbol == arcade.key.D:
+            self.cam.position = self.cam.position + (d, 0)
+        elif symbol == arcade.key.A:
+            self.cam.position = self.cam.position + (-d, 0)
+
+        # move view
+        elif symbol == arcade.key.U:
+            self.cam.position -= (0, d)
+            self.cam.scissor = self.cam.scissor.move(0, d)
+        elif symbol == arcade.key.J:
+            self.cam.position -= (0, -d)
+            self.cam.scissor = self.cam.scissor.move(0, -d)
+        elif symbol == arcade.key.K:
+            self.cam.position -= (d, 0)
+            self.cam.scissor = self.cam.scissor.move(d, 0)
+        elif symbol == arcade.key.H:
+            self.cam.position -= (-d, 0)
+            self.cam.scissor = self.cam.scissor.move(-d, 0)
 
 if __name__ == '__main__':
-    win = arcade.Window(1000, 800, 'test')
-    view = GameView()
-    win.show_view(view)
+    # I want to be able to set of internal offset, and then position/clip it in screenspace
+
+    win = Game(800, 600, "test")
+
+    win.cam = arcade.Camera2D(
+        # viewport=arcade.rect.LRBT(-400, 400, -300, 300),
+        projection=arcade.rect.LRBT(0, 800, 0, 600),
+        position=(0, 0),
+        scissor=arcade.rect.LRBT(0, 200, 0, 200)
+    )
     win.run()
