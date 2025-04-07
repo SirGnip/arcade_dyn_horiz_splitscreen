@@ -1,29 +1,43 @@
 """
-Goal: Get dynamic split screen
-Current: Can fly player one to the left to split screen and then back right to merge to full.
-Problems: Ships can't trade sides
+Goal: Get dynamic split screen, added margin, a bit of cleanup.
+Result: It works! There are some hitches.
+
+BUG: When flying one ship to the left (while the other is still), when the screen splits, the split/full merge thrashes back and forth for a few frames.
+I'm assuming it is because the "split" and "merge" logic are both happening at the same time. You'll notice the "split"
+feels choppy in general.
 """
+
 import sys
+import math
+import random
 import pathlib
 from enum import Enum
 import arcade
+
+WORLD_X_MIN, WORLD_X_MAX = -5000, 5000
+WIN_WIDTH, WIN_HEIGHT = 1200, 800
+VIEW_WIDTH, VIEW_HEIGHT = 500, 700
+VIEW_OFFSET = (100, 50)
+MARGIN = 75
+MOUNTAIN_HEIGHT = int(VIEW_HEIGHT * .3)
 
 
 class SplitMode(Enum):
     FULL = 0
     SPLIT = 1
 
+
 class Player(arcade.Sprite):
     def __init__(self, udlr: list[int]):
-        super().__init__(":resources:/images/space_shooter/playerShip1_blue.png", scale=0.5)
+        super().__init__(":resources:/images/space_shooter/playerShip1_blue.png", scale=0.4)
         self.key_up, self.key_down, self.key_left, self.key_right = udlr
 
     def update(self, delta_time):
         self.center_x += self.change_x
-        self.center_y = arcade.math.clamp(self.center_y + self.change_y, 0, 400)
+        self.center_y = arcade.math.clamp(self.center_y + self.change_y, 0, VIEW_HEIGHT)
 
     def on_key_press(self, symbol: int):
-        d = 5
+        d = 4
         if symbol == self.key_up:
             self.angle = 0
             if self.change_y > 0:
@@ -45,9 +59,29 @@ class Player(arcade.Sprite):
             self.change_x = -d
             self.change_y = 0
 
+
 class Game(arcade.Window):
-    def __init__(self, w, h, title):
+    def __init__(self, w, h, view_width, view_height, view_offset, title):
         super().__init__(w, h, title)
+
+        # cameras
+        self.caml = arcade.Camera2D(
+            projection=arcade.rect.LBWH(0, 0, w, h),
+            scissor=arcade.rect.LBWH(view_offset[0], view_offset[1], view_width, view_height)  # in screenspace
+        )
+        self.camr = arcade.Camera2D(
+            projection=arcade.rect.LBWH(0, 0, w, h),
+            scissor=arcade.rect.LBWH(view_width + view_offset[0], view_offset[1], view_width, view_height)  # in screenspace
+        )
+        self.camf = arcade.Camera2D(
+            projection=arcade.rect.LBWH(0, 0, w, h),
+            position=(0, -50),  # starting position
+            scissor=arcade.rect.LBWH(view_offset[0], view_offset[1], view_width * 2, view_height)  # in screenspace
+        )
+        self.default_cam = arcade.Camera2D()
+        self.mode = SplitMode.FULL
+
+        # players
         self.sprites = arcade.SpriteList()
         p = Player([arcade.key.W, arcade.key.S, arcade.key.A, arcade.key.D])
         p.position = (100, 100)
@@ -55,46 +89,80 @@ class Game(arcade.Window):
         p = Player([arcade.key.UP, arcade.key.DOWN, arcade.key.LEFT, arcade.key.RIGHT])
         p.position = (200, 150)
         self.sprites.append(p)
-        self.mode = SplitMode.FULL
+
+        # world geometry
+        self.bg_sprites = arcade.SpriteList()
+        for _ in range(60):
+            x = random.randint(WORLD_X_MIN, WORLD_X_MAX)
+            y = random.randint(MOUNTAIN_HEIGHT, VIEW_HEIGHT)
+            a = random.uniform(-90, 90)
+            scale = random.uniform(0.2, 0.3)
+            images = [
+                ":resources:images/pinball/bumper.png",
+                ":resources:images/space_shooter/meteorGrey_big2.png",
+                ":resources:images/space_shooter/meteorGrey_tiny2.png",
+                ":resources:images/items/star.png",
+            ]
+            img = random.choice(images)
+            sprite = arcade.Sprite(img, scale, x, y, angle=a)
+            self.bg_sprites.append(sprite)
+        def my_rand(x, max_val):
+            return ((x * 123455) ^ x) % max_val  # quasi-random number generator, repeatable
+        self.line_pts = [(x, my_rand(x, 200)) for x in range(WORLD_X_MIN, WORLD_X_MAX, MOUNTAIN_HEIGHT)]
+        self.line_pts.append((WORLD_X_MAX, -100))
+        self.line_pts.append((WORLD_X_MIN, -100))
+
+        # debug
+        self.tick = 0
 
     def draw_scene(self):
-        arcade.draw_lrbt_rectangle_filled(-10000, 10000, -10000, 10000, arcade.color.BLACK)
+        arcade.draw_lrbt_rectangle_filled(WORLD_X_MIN, WORLD_X_MAX, -10000, 10000, arcade.color.BLACK)
+        self.bg_sprites.draw()
+        arcade.draw_polygon_filled(self.line_pts, arcade.color.DARK_BROWN)
+        arcade.draw_line_strip(self.line_pts, arcade.color.YELLOW, 2)
         arcade.draw_lrbt_rectangle_filled(-200, 200, -200, 200, arcade.color.YELLOW)
         arcade.draw_circle_filled(0, 0, 30, arcade.color.RED)
         arcade.draw_circle_filled(0, 0, 10, arcade.color.GRAY)
         arcade.draw_circle_filled(300, 300, 20, arcade.color.PINK)
         arcade.draw_text("this is a test", 70, 70, arcade.color.PINK, 24)
-        for x in range(-2000, 2001, 100):
-            arcade.draw_text(str(x), x, 0, arcade.color.GREEN, 20)
         self.sprites.draw()
 
     def on_draw(self):
-        self.clear(arcade.color.DARK_BROWN)
-        a1, a2 = self.sprites
-        dist = arcade.get_distance_between_sprites(a1, a2)
+        self.clear((25, 25, 25))
 
-        if self.mode == SplitMode.FULL and dist >= 800:
-            print('transition to split mode')
+        left_actor, right_actor = self.sprites
+        left_actor, right_actor = (left_actor, right_actor) if left_actor.center_x < right_actor.center_x else (right_actor, left_actor)
+        dist = arcade.get_distance_between_sprites(left_actor, right_actor)
+
+        if self.mode == SplitMode.FULL and dist >= (VIEW_WIDTH * 2) - (MARGIN * 2):
+            print(f'{self.tick} transition to split mode')
             self.mode = SplitMode.SPLIT
             self.caml.position = self.camf.position
             self.camr.position = self.camf.position
-        elif self.mode == SplitMode.SPLIT and dist <= 400:
-            print('transition to full mode')
+        elif self.mode == SplitMode.SPLIT and math.fabs(self.caml.position.x - self.camr.position.x) < 15:
+            print(f'{self.tick} transition to full mode')
             self.mode = SplitMode.FULL
             self.camf.position = self.caml.position
 
         if self.mode == SplitMode.FULL:
-            scroll_view(self.camf, self.sprites[0])
-            scroll_view(self.camf, self.sprites[1])
+            scroll_view(self.camf, left_actor)
+            scroll_view(self.camf, right_actor)
             with self.camf.activate():
                 self.draw_scene()
         else:
-            scroll_view(self.caml, self.sprites[0])
-            scroll_view(self.camr, self.sprites[1])
+            scroll_view(self.caml, left_actor)
+            scroll_view(self.camr, right_actor)
             with self.caml.activate():
                 self.draw_scene()
             with self.camr.activate():
                 self.draw_scene()
+            with self.default_cam.activate():
+                x = VIEW_OFFSET[0] + VIEW_WIDTH
+                arcade.draw_line(x, 0, x, WIN_HEIGHT, arcade.color.WHITE, 3)
+
+        self.tick += 1
+        # if self.tick % 5 == 0:
+        #     print(self.caml.position, self.camr.position, self.camf.position)
 
     def on_update(self, delta_time):
         self.sprites.update(delta_time)
@@ -109,10 +177,10 @@ def scroll_view(cam, actor):
     # translate the screen view to world space
     view_in_world_space = cam.scissor.move(cam.position[0], cam.position[1])
     new_view = None  # rect in world-space
-    if actor.center_x < view_in_world_space.left:
-        new_view = view_in_world_space.align_left(actor.center_x)
-    if actor.center_x > view_in_world_space.right:
-        new_view = view_in_world_space.align_right(actor.center_x)
+    if actor.center_x - MARGIN < view_in_world_space.left:
+        new_view = view_in_world_space.align_left(actor.center_x - MARGIN)
+    if actor.center_x + MARGIN > view_in_world_space.right:
+        new_view = view_in_world_space.align_right(actor.center_x + MARGIN)
     if actor.center_y > view_in_world_space.top:
         new_view = view_in_world_space.align_top(actor.center_y)
     if actor.center_y < view_in_world_space.bottom:
@@ -123,22 +191,5 @@ def scroll_view(cam, actor):
 
 
 if __name__ == '__main__':
-    width, height = 1000, 500
-    win = Game(width, height, pathlib.Path(sys.argv[0]).name)
-    win.caml = arcade.Camera2D(
-        projection=arcade.rect.LBWH(0, 0, width, height),
-        position=(0, -50),
-        scissor=arcade.rect.LBWH(50, 50, 400, 400)  # screenspace
-    )
-    win.camr = arcade.Camera2D(
-        projection=arcade.rect.LBWH(0, 0, width, height),
-        position=(0, -50),
-        scissor=arcade.rect.LBWH(451, 50, 400, 400)  # screenspace
-    )
-    win.camf = arcade.Camera2D(
-        projection=arcade.rect.LBWH(0, 0, width, height),
-        position=(0, -50),
-        scissor=arcade.rect.LBWH(50, 50, 800, 400)  # full window
-    )
+    win = Game(WIN_WIDTH, WIN_HEIGHT, VIEW_WIDTH, VIEW_HEIGHT, VIEW_OFFSET, pathlib.Path(sys.argv[0]).name)
     win.run()
-
