@@ -1,16 +1,53 @@
 """
-Goal: Independent scrolling with two separate views
+Goal: Get two independently controlled actors
 """
+import sys
+import pathlib
 import arcade
 
+class Player(arcade.Sprite):
+    def __init__(self, udlr: list[int]):
+        super().__init__(":resources:/images/space_shooter/playerShip1_blue.png")
+        self.key_up, self.key_down, self.key_left, self.key_right = udlr
+
+    def update(self, delta_time):
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+
+    def on_key_press(self, symbol: int):
+        d = 4
+        if symbol == self.key_up:
+            self.angle = 0
+            if self.change_y > 0:
+                self.change_x = 0
+                self.change_y = 0
+            else:
+                self.change_x = 0
+                self.change_y = d
+        elif symbol == self.key_down:
+            self.angle = 180
+            self.change_x = 0
+            self.change_y = -d
+        elif symbol == self.key_right:
+            self.angle = 90
+            self.change_x = d
+            self.change_y = 0
+        elif symbol == self.key_left:
+            self.angle = 270
+            self.change_x = -d
+            self.change_y = 0
 
 class Game(arcade.Window):
     def __init__(self, w, h, title):
         super().__init__(w, h, title)
         self.sprites = arcade.SpriteList()
-        self.actor = arcade.Sprite(":resources:/images/space_shooter/playerShip1_blue.png")
-        self.actor.position = (100, 100)
-        self.sprites.append(self.actor)
+        p = Player([arcade.key.W, arcade.key.S, arcade.key.A, arcade.key.D])
+        p.position = (100, 100)
+        self.sprites.append(p)
+        p = Player([arcade.key.UP, arcade.key.DOWN, arcade.key.LEFT, arcade.key.RIGHT])
+        p.position = (200, 150)
+        self.sprites.append(p)
+
 
     def draw_scene(self):
         arcade.draw_lrbt_rectangle_filled(-10000, 10000, -10000, 10000, arcade.color.BLACK)
@@ -31,40 +68,20 @@ class Game(arcade.Window):
             self.draw_scene()
 
     def on_update(self, delta_time):
-        self.actor.center_x += self.actor.change_x
-        self.actor.center_y += self.actor.change_y
-        scroll_view(self.cam1, self.actor)
-        scroll_view(self.cam2, self.actor)
+        self.sprites.update(delta_time)
+        scroll_view(self.cam1, self.sprites[0])
+        scroll_view(self.cam2, self.sprites[1])
 
-    def on_key_press(self, symbol: int,modifiers: int):
-        d = 5
+    def on_key_press(self, symbol: int, modifiers: int):
         if symbol == arcade.key.ESCAPE:
             self.close()
+        [s.on_key_press(symbol) for s in self.sprites]
 
-        if symbol == arcade.key.W:
-            self.actor.angle = 0
-            self.actor.change_x = 0
-            self.actor.change_y = d
-        elif symbol == arcade.key.S:
-            self.actor.angle = 180
-            self.actor.change_x = 0
-            self.actor.change_y = -d
-        elif symbol == arcade.key.D:
-            self.actor.angle = 90
-            self.actor.change_x = d
-            self.actor.change_y = 0
-        elif symbol == arcade.key.A:
-            self.actor.angle = 270
-            self.actor.change_x = -d
-            self.actor.change_y = 0
-        elif symbol == arcade.key.SPACE:
-            self.actor.change_x = 0
-            self.actor.change_y = 0
 
 def scroll_view(cam, actor):
     # translate the screen view to world space
     view_in_world_space = cam.scissor.move(cam.position[0], cam.position[1])
-    new_view = None  # world-space
+    new_view = None  # rect in world-space
     if actor.center_x < view_in_world_space.left:
         new_view = view_in_world_space.align_left(actor.center_x)
     if actor.center_x > view_in_world_space.right:
@@ -80,7 +97,7 @@ def scroll_view(cam, actor):
 
 if __name__ == '__main__':
     width, height = 900, 400
-    win = Game(width, height, "scrolling")
+    win = Game(width, height, pathlib.Path(sys.argv[0]).name)
     win.cam1 = arcade.Camera2D(
         projection=arcade.rect.LBWH(0, 0, width, height),
         position=(0, 0),
