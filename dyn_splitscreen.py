@@ -1,5 +1,5 @@
 """
-Goal: Get two independently controlled actors
+Goal: Two view modes, one where each player has their own screen and one where they are both on one screen (press TAB to toggle)
 """
 import sys
 import pathlib
@@ -62,17 +62,24 @@ class Game(arcade.Window):
 
     def on_draw(self):
         self.clear(arcade.color.DARK_BROWN)
-        with self.cam1.activate():
-            self.draw_scene()
-        with self.cam2.activate():
-            self.draw_scene()
+        if self.show_camf:
+            scroll_view(self.camf, self.sprites[0])
+            with self.camf.activate():
+                self.draw_scene()
+        else:
+            scroll_view(self.caml, self.sprites[0])
+            scroll_view(self.camr, self.sprites[1])
+            with self.caml.activate():
+                self.draw_scene()
+            with self.camr.activate():
+                self.draw_scene()
 
     def on_update(self, delta_time):
         self.sprites.update(delta_time)
-        scroll_view(self.cam1, self.sprites[0])
-        scroll_view(self.cam2, self.sprites[1])
 
     def on_key_press(self, symbol: int, modifiers: int):
+        if symbol == arcade.key.TAB:
+            self.show_camf = not self.show_camf
         if symbol == arcade.key.ESCAPE:
             self.close()
         [s.on_key_press(symbol) for s in self.sprites]
@@ -96,16 +103,23 @@ def scroll_view(cam, actor):
 
 
 if __name__ == '__main__':
-    width, height = 900, 400
+    width, height = 1000, 500
     win = Game(width, height, pathlib.Path(sys.argv[0]).name)
-    win.cam1 = arcade.Camera2D(
+    win.caml = arcade.Camera2D(
         projection=arcade.rect.LBWH(0, 0, width, height),
         position=(0, 0),
-        scissor=arcade.rect.LBWH(50, 80, 350, 300)  # screenspace
+        scissor=arcade.rect.LBWH(50, 50, 400, 400)  # screenspace
     )
-    win.cam2 = arcade.Camera2D(
+    win.camr = arcade.Camera2D(
         projection=arcade.rect.LBWH(0, 0, width, height),
         position=(0, 0),
-        scissor=arcade.rect.LBWH(450, 10, 150, 350)  # screenspace
+        scissor=arcade.rect.LBWH(450, 50, 400, 400)  # screenspace
     )
+    win.camf = arcade.Camera2D(
+        projection=arcade.rect.LBWH(0, 0, width, height),
+        position=(0, 0),
+        scissor=arcade.rect.LBWH(50, 50, width-100, height-100)  # full window
+    )
+    win.show_camf = False  # toggle variable
     win.run()
+
